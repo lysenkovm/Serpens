@@ -34,11 +34,12 @@ def coords_plus_minus(coords, value, direction, strait_or_back):
 class Game:
     def __init__(self):
         self.square_size = 16
+        # Кол-во ячеек по-вертик. и по-горит.
         self.field_size = size[0] // self.square_size, size[1] // \
                           self.square_size
 
         # Создать объект Змеи
-        self.snake = Snake(self, self.square_size * 2)
+        self.snake = Snake(self, self.square_size * 8)
         # Создать группу спрайтов Яблок
         # self.apples = pygame.sprite.Group()
 
