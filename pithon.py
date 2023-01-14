@@ -3,209 +3,265 @@ import random
 from itertools import product
 from operator import itemgetter
 
+DIRS_POINTS = (((1, 0), (0, 0)),
+               ((0, 0), (1, 0)),
+               ((0, 1), (0, 0)),
+               ((0, 0), (0, 1)))
+DIRS_SIDES = (((0, 0), (0, 1)),
+              ((1, 0), (1, 1)),
+              ((0, 0), (1, 0)),
+              ((0, 1), (1, 1)))
+DIRS_P_S = dict(zip(DIRS_POINTS, DIRS_SIDES))
+DIRS_S_P = dict(zip(DIRS_SIDES, DIRS_POINTS))
+FACTOR_POINT_N = {1: 0, -1: 1}
 
 
-# ['left', 'up', 'right', 'down']
-DIRECTIONS = ['left', 'up', 'right', 'down']
-# {1073741904: 'left', 1073741906: 'up', 1073741903: 'right', 1073741905: 'down'}
-KEYS_DIRS = dict(zip((pygame.K_LEFT, pygame.K_UP, pygame.K_RIGHT,
-                     pygame.K_DOWN), DIRECTIONS))
-# {'left': 1073741904, 'up': 1073741906, 'right': 1073741903, 'down': 1073741905}
-DIRS_KEYS = dict(zip(KEYS_DIRS.values(), KEYS_DIRS.keys()))
-# {'left': 'right', 'up': 'down', 'right': 'left', 'down': 'up'}
-OPPO_DIRS = dict(zip(DIRECTIONS, itemgetter(2, 3, 0, 1)(DIRECTIONS)))
-# {1073741904: 1073741903, 1073741906: 1073741905, 1073741903: 1073741904, 1073741905: 1073741906}
-OPPO_KEYS = {DIRS_KEYS[d]: DIRS_KEYS[op_d] for d, op_d in OPPO_DIRS.items()}
-# {'strait': {'left': (0, -1), 'right': (0, 1), 'up': (1, -1), 'down': (1, 1)},
-# 'back': {'left': (0, 1), 'right': (0, -1), 'up': (1, 1), 'down': (1, -1)}}
-PLUS_MINUS = {'strait': dict(zip(('left', 'right', 'up', 'down'),
-                                 product((0, 1), (-1, 1)))),
-              'back': dict(zip(('left', 'right', 'up', 'down'),
-                               product((0, 1), (1, -1))))}
+# Получить значение именованного параметра или значение по-умолчанию
+def get_kwarg(kwargs, kwarg_name, else_arg=False):
+    if else_arg:
+        return kwargs[kwarg_name] if kwarg_name in kwargs else else_arg
+    else:
+        return kwargs[kwarg_name]
 
 
-def coords_plus_minus(coords, value, direction, strait_or_back):
-    coords = list(coords)
-    idx, sign = PLUS_MINUS[strait_or_back][direction]
-    coords[idx] += value * sign
-    return tuple(coords)
+def listerize(seq):
+    return list(map(lambda x: listerize(x)
+                    if isinstance(x, (tuple, list)) else x, seq))
+
+
+def tuplerize(seq):
+    return tuple(map(lambda x: tuplerize(x)
+                     if isinstance(x, (tuple, list)) else x, seq))
+
+
+def growth_dir(dir_):
+    return tuple(reversed(dir_))
+
+
+# Суммировать координаты двух точек в одну
+def pair_sum(*pair):
+    return tuple(map(lambda el: pair_sum(*el)
+                     if isinstance(pair[0][0], tuple) else sum(el),
+                     zip(*pair)))
+
+
+# Получение НомКоорд и Фактора (множителя)
+def get_coords_ns_factors(dir_):
+    coords_ns_factors = tuple(map(lambda i: (i, dir_[1][i] - dir_[0][i]),
+                                  range(len(dir_[0]))))
+    return tuple(filter(lambda x: x[1], coords_ns_factors))[0]
+
+
+# Обрезка квадрата на 'val' по 'dir'
+def cut_rect_points(rect, dir_, val):
+    rect = listerize(rect)
+    coord_n, factor = get_coords_ns_factors(dir_)
+    point_n = FACTOR_POINT_N[factor]
+    rect[point_n] = move_coords(rect[point_n], coord_n, factor, val)
+    return tuplerize(rect)
+
+
+def move_coords(coords, coord_n, factor, val):
+    coords = listerize(coords)
+    coords[coord_n] += factor * val
+    return tuplerize(coords)
+
+
+def factors_to_coords(seq, sq_size):
+    return tuple(map(lambda p: (factors_to_coords(p, sq_size)
+                                if isinstance(p, (tuple, list))
+                                else p * sq_size), seq))
+
+
+def square_to_point_coords(sq_coords, sq_size):
+    return tuple(map(lambda coord: coord * sq_size, sq_coords))
+
+
+# Преобразовать точечные координаты в квадратные с округлением
+def points_to_square(coord, sq_size):
+    return coord // sq_size, coord % sq_size  # Номер квадрата и !номер! линии
+
+
+
+# Test-Grid
+
+class GridLine(pygame.sprite.Sprite):
+    def __init__(self, group, rect, pos, coord_n):
+        super().__init__(group)
+        self.rect = self.gen_rect(rect, pos, coord_n)
+        x = self.rect[1][0] - self.rect[0][0]
+        y = self.rect[1][1] - self.rect[0][1]
+        x += 1 if x == 0 else 0
+        y += 1 if y == 0 else 0
+        self.image = pygame.Surface((x, y))
+        self.image.fill('red')
+
+    def gen_rect(self, rect, pos, coord_n):
+        line_rect = tuple(map(lambda p: move_coords(p, coord_n, 1, pos), rect))
+        return line_rect
+
+def gen_grid(screen_size, sq_size, group):
+
+    hor_rect_factors_points = ((0, 0), (1, 0))
+    hor_rect = tuple([(p[0] * screen_size[0], p[1] * screen_size[0])
+                      for p in hor_rect_factors_points])
+    for i in range(0, screen_size[1], sq_size):
+        GridLine(group, hor_rect, i, 1)
+
+    vert_rect_factors_points = ((0, 0), (0, 1))
+    vert_rect = tuple([(p[0] * screen_size[0], p[1] * screen_size[1])
+                      for p in vert_rect_factors_points])
+    for j in range(0, screen_size[0], sq_size):
+        GridLine(group, vert_rect, j, 0)
+
+
+# Test-Grid
+
 
 
 class Game:
     def __init__(self):
-        self.square_size = 16
-        # Кол-во ячеек по-вертик. и по-горит.
-        self.field_size = size[0] // self.square_size, size[1] // \
-                          self.square_size
+        # Определить размеры Квадрата и Поля
+        self.square_size = 32
+        self.field_size_sq = size[0] // self.square_size, \
+                             size[1] // self.square_size  # Кол-во ячеек по-вертик. и по-гориз.
 
-        # Создать объект Змеи
-        self.snake = Snake(self, self.square_size * 8)
+        # Определить направление и длину Змеи в квадратах
+        # snake_dir = random.choice(DIRS_POINTS)  # Случайное направление Змеи
+        snake_dir = DIRS_POINTS[1]  # Test - uncomment prev.
+        snake_len_in_sq = 3  # Длина в квадратах
+
+        # Создать и перенести координаты 2-х квадратов - границ игрового поля
+        # для выбора головного квадрата
+        field_rect = ((0, 0), (self.field_size_sq[0] - 1,
+                               self.field_size_sq[1] - 1))
+        field_rect_cut = cut_rect_points(field_rect, snake_dir, 2)
+
+        # Выбрать квадрат (координаты) Головн.Яч.
+        (x1, y1), (x2, y2) = field_rect_cut
+        # head_square = (random.randint(x1, x2),
+        #                random.randint(y1, y2))
+        head_square = (10, 4)  # Test - uncomment 2 prev.
+        self.snake = Snake(self, snake_dir, snake_len_in_sq, head_square)
         # Создать группу спрайтов Яблок
         # self.apples = pygame.sprite.Group()
 
     def next_move(self):
-        self.snake.update()
-##        self.apples.update()
+        # test
+        self.snake.make_move()
+        # test
+
+        # self.snake.update()
+
+    ##        self.apples.update()
 
     def gen_apple(self):
         pass
 
 
 class Snake(pygame.sprite.Group):
-    def __init__(self, game, length):
+    def __init__(self, game, snake_dir, snake_len_in_sq, head_coords_sq):
         super().__init__()
-        self.game = game
         self.color = 'black'
         self.head_color = 'red'
 
-        self.dir = random.choice(DIRECTIONS)
-        
-        # Добавить первую часть - и хвост, и голова
-        ## Создать головную ячейку
-        head_coords = (self.game.field_size[0] // 2 * self.game.square_size,
-                       self.game.field_size[1] // 2 * self.game.square_size)
-        head_cells = [Snake_cell(coords_plus_minus(head_coords, 1, self.dir,
-                                                   'back'), visual_head=True)
-                      for i in range(self.game.square_size)]
-        ## Создать головную часть с головной ячейкой
-        snake_head = Snake_part(groups=[self], snake=self, length=length,
-                                dir=self.dir, cells=head_cells)
-        for i in range(len(head_cells), length):
-            coords = coords_plus_minus(head_cells[-1].coords, i,
-                                       snake_head.dir, 'back')
-            snake_head.insert(Snake_cell(coords))
-        snake_head.renew_image_rect()
+        self.game = game
+        self.dir_ = snake_dir
+        self.lines = []
 
-    def get_head(self, item='part'):
-        head_part = self.sprites()[-1]
-        head_cell = head_part.cells[-1]
-        head_coords = head_cell.coords
-        head_items = {'part': head_part,
-                      'cell': head_cell,
-                      'coords': head_coords}
-        return head_items[item]
-    
-    def update(self):
-        parts = self.sprites()
-        last_cells = [part.pop() for part in parts]  # Выделить последние ячейки из всех частей
-        head_cell = last_cells.pop(-1)  # Выделить головную ячейку в отдельную переменную
-        if last_cells:  # Переставить передние ячейки в следующие части
-            [parts[i + 1].insert(last_cells[i]) for i in range(len(last_cells))]
-        if not parts[0].cells:  # Если хвостовая часть не содержит ячеек - удалить ее из группы
-            parts[0].remove(self)
-        # Создать новую головную часть
-        if self.get_head('part').dir != self.dir:
-            new_head_part = Snake_part(groups=[self], snake=self, length=1,
-                                       dir=self.dir, cells=[head_cell])
-        else:
-            self.get_head('part').insert(head_cell, -1)
-        # Вызвать методы update у каждого спрайта (части)
-        parts = self.sprites()
-        for part in parts:
-            part.update()
+        # Генерация Линий в Кв-тах
+        for sq_n in range(snake_len_in_sq):  # Для каждого номера кв-та
+            coord_n, factor = get_coords_ns_factors(growth_dir(self.dir_))
+            square = move_coords(head_coords_sq, coord_n, factor, sq_n)
+            for line_n in range(self.game.square_size):  # Для кажд. номера линии (в кв-те) (0,1,...,15)
+                line = Line(self, self.game.square_size, square, self.dir_, line_n)
+                # Поместить в 'self.cells' в начало (стек) Линию с направлением,
+                # координатами квадрата, номером линии
+                self.lines.append(line)
+
+        # print(self.dir_, head_coords_sq)
+        # for line in self.lines:
+        #     print(line.square, line.line_n, line.rect)
+
+    def move_forward(self):
+        tail_line = self.lines.pop(-1)
+        square, line_n = self.lines[0].square, self.lines[0].line_n
+        tail_line.update(square=square, line_n=line_n - 1)
+        self.lines.insert(0, tail_line)
+
+
 
     def change_dir(self, direction):
         self.dir = direction
-        
-
-class Snake_part(pygame.sprite.Sprite):
-    def __init__(self, **kwargs):
-        # kwargs:
-        # groups: []
-        # snake: Snake
-        # length: int
-        # dir: str
-        # cells: [Snake_cells]
-        super().__init__(*kwargs['groups'])
-        self.length = kwargs['length'] if 'length' in kwargs else 1
-        self.snake = kwargs['snake']
-        self.dir = kwargs['dir'] if 'dir' in kwargs else self.snake.dir
-        # Добавляем все ячейки в новую часть (головную)
-        self.cells = [cell for cell in kwargs['cells']]
-        [cell.update(part=self) for cell in self.cells]
 
 
-    def index(self):
-        return self.snake.sprites().index(self)
+class Line(pygame.sprite.Sprite):
+    def __init__(self, snake, square_size, square, dir_, line_n):
+        super().__init__(snake)
+        self.snake = snake
+        self.length = square_size
+        self.square = square
+        self.dir_ = dir_
 
-    def is_head(self): return self.index() == len(self.snake) - 1
+        self.length = self.snake.game.square_size
 
-    def is_tail(self): return not self.index()
+        self.line_n = line_n
+        self.update_rect_image()
 
-    def renew_image_rect(self):
-        self.length = self.get_length()
-        self.image = self.get_image()
-        self.rect = self.get_rect()
+    def gen_rect(self):
+        # Получить Прямоугольник (координаты точек) Линии внутри Квадрата
+        rect_factors_points = DIRS_P_S[self.dir_]  # Факторы координат стороны "точки отсчета" по напр-ю
+        rect_in_sq = factors_to_coords(rect_factors_points, self.length)  # Координаты точек из факторов
+        coord_n, factor = get_coords_ns_factors(growth_dir(self.dir_))  # № координаты с Фактором 1 и Фактор (1)
+        # Сдвинуть координаты на номер линии в квадрате
+        line_rect_in_sq = tuple(map(lambda p:
+                                    move_coords(p, coord_n, factor,
+                                                self.line_n), rect_in_sq))
 
-    def get_image(self):
-        x1, y1, x2, y2 = self.get_sprite_coords()
-        return pygame.Surface((x2 - x1, y2 - y1))
+        # Получить координаты точки Квадрата Линии (первой точки Квадрата от начала координат)
+        point_coords_of_square = square_to_point_coords(self.square, self.length)
 
-    # Используется метод 'coords_plus_minus'
-    def get_rect(self):
-        x1, y1, x2, y2 = self.get_sprite_coords()
-        return pygame.Rect(x1, y1, x2 - x1, y2 - y1)
+        # Получить сумму координат точек
+        return pair_sum(line_rect_in_sq, (point_coords_of_square,
+                                          point_coords_of_square))
 
-    def get_sprite_coords(self):
-        hor, ver = self.cells[0].get_sizes()
-        print(hor, ver)
-        hor_coords = tuple(map(lambda cell: cell.coords[0], self.cells))
-        left = min(hor_coords)
-        right = max(hor_coords)
-        ver_coords = tuple(map(lambda cell: cell.coords[1], self.cells))
-        up = min(ver_coords)
-        down = max(ver_coords)
-        x1 = left - hor
-        y1 = up - ver
-        x2 = right
-        y2 = down
-        return (x1, y1, x2, y2)
-
-    def update(self):
-        for cell in self.cells:  # передвинуть вперед каждую ячейку в части
-            cell.update(coords=coords_plus_minus(cell.coords, 1,
-                                                 self.dir, 'strait'))
-        self.renew_image_rect()
-
-    def insert(self, cell, idx=0):
-        cell.update(part=self)
-        if idx == -1:
-            self.cells.append(cell)
-        else:
-            self.cells.insert(idx, cell)
-
-    def get_length(self):
-        return len(self.cells)
-
-    def pop(self, index=-1):
-        return self.cells.pop(index)
-
-
-
-class Snake_cell:
-    def __init__(self, coords, part=False, visual_head=False):
-        self.coords = coords
-        self.part = part
-        self.visual_head = visual_head
+    def gen_image(self):
+        x = self.rect[1][0] - self.rect[0][0]
+        y = self.rect[1][1] - self.rect[0][1]
+        x += 1 if not x else 0
+        y += 1 if not y else 0
+        return x, y
 
     def update(self, **kwargs):
-        if 'coords' in kwargs:
-            self.coords = kwargs['coords']
-        if 'part' in kwargs:
-            self.part = kwargs['part']
-        if 'visual_head' in kwargs:
-            self.visual_head = kwargs['visual_head']
 
-    def get_sizes(self):
-        if self.part.dir in ('up', 'down'):
-            hor = self.part.snake.game.square_size
-            ver = 1
-        elif self.part.dir in ('left', 'right'):
-            hor = 1
-            ver = self.part.snake.game.square_size
-        return (hor, ver)
+        if 'dir_' in kwargs:
+            dir_ = get_kwarg(kwargs, 'dir_')
+            if dir_:
+                self.dir_ == dir_
 
-        
+        if 'square' in kwargs:
+            square = get_kwarg(kwargs, 'square')
+            if square:
+                self.square = square
+
+        if 'line_n' in kwargs:
+            line_n = get_kwarg(kwargs, 'line_n')
+            if line_n:
+                self.line_n = line_n
+                if self.line_n >= self.length:
+                    val = self.line_n // self.length
+                    coord_n, factor = get_coords_ns_factors(growth_dir(self.dir_))
+                    self.square = move_coords(self.square, coord_n, factor, val)
+                    self.line_n %= self.length
+
+        self.update_rect_image()
+
+    def update_rect_image(self):
+        self.rect = self.gen_rect()
+        self.image = pygame.Surface(self.gen_image())
+        self.image.fill(self.snake.color)
+
+
 class Apple(pygame.sprite.Sprite):
     def __init__(self, square, apples, game):
         super().__init__(*apples)
@@ -226,7 +282,7 @@ class Apple(pygame.sprite.Sprite):
 
 if __name__ == '__main__':
     pygame.init()
-    size = 1280, 1024
+    size = 960, 640
     screen = pygame.display.set_mode(size)
     screen.fill('white')
     fps = 50
@@ -235,7 +291,14 @@ if __name__ == '__main__':
     game = Game()
 
 
-    test = 0
+    # test
+    screen_grid = pygame.sprite.Group()
+    gen_grid(size, game.square_size, screen_grid)
+    screen_grid.draw(screen)
+    # for i in range(50):
+    #     game.next_move()
+    # test
+
     new_snake_dir = False
     running = True
     while running:
@@ -247,22 +310,17 @@ if __name__ == '__main__':
             if event.type == pygame.KEYDOWN:
                 print(event.key, KEYS_DIRS[event.key])
                 if (event.key in KEYS_DIRS) and (game.snake.dir not in \
-                        (KEYS_DIRS[event.key], KEYS_DIRS[OPPO_KEYS
-                        [event.key]])):
+                                                 (KEYS_DIRS[event.key], KEYS_DIRS[OPPO_KEYS
+                                                 [event.key]])):
                     new_snake_dir = KEYS_DIRS[event.key]
-        if all(map(lambda coord: not coord % game.square_size,
-                   game.snake.get_head('coords'))) and new_snake_dir:
-            game.snake.change_dir(new_snake_dir)
-            new_snake_dir = False
-            
+
+        game.snake.move_forward()
+
         screen.fill('white')
+        screen_grid.draw(screen)
         game.snake.draw(screen)
 
-        game.next_move()
-
-        
         clock.tick(fps)
         pygame.display.flip()
-        
 
     pygame.quit()
