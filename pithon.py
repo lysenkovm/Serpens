@@ -15,6 +15,11 @@ DIRS_P_S = dict(zip(DIRS_POINTS, DIRS_SIDES))
 DIRS_S_P = dict(zip(DIRS_SIDES, DIRS_POINTS))
 FACTOR_POINT_N = {1: 0, -1: 1}
 
+DIRS_KEYS = dict(zip(DIRS_POINTS, (pygame.K_LEFT, pygame.K_RIGHT,
+                                   pygame.K_UP, pygame.K_DOWN)))
+KEYS_DIRS = dict(map(reversed, DIRS_KEYS.items()))
+
+
 
 # Получить значение именованного параметра или значение по-умолчанию
 def get_kwarg(kwargs, kwarg_name, else_arg=False):
@@ -146,15 +151,6 @@ class Game:
         # Создать группу спрайтов Яблок
         # self.apples = pygame.sprite.Group()
 
-    def next_move(self):
-        # test
-        self.snake.make_move()
-        # test
-
-        # self.snake.update()
-
-    ##        self.apples.update()
-
     def gen_apple(self):
         pass
 
@@ -182,17 +178,22 @@ class Snake(pygame.sprite.Group):
         # print(self.dir_, head_coords_sq)
         # for line in self.lines:
         #     print(line.square, line.line_n, line.rect)
+        # print(self.lines[0].line_n)
 
     def move_forward(self):
         tail_line = self.lines.pop(-1)
         square, line_n = self.lines[0].square, self.lines[0].line_n
-        tail_line.update(square=square, line_n=line_n - 1)
+        dir_ = self.lines[0].dir_
+        tail_line.update_args(square=square, line_n=line_n - 1, dir_=dir_)
         self.lines.insert(0, tail_line)
 
+    def change_head_dir(self, new_dir):
+        self.dir_ = new_dir
+        for line in self.lines[:self.game.square_size]:
+            line.update_args(dir_=self.dir_)
+        # print(self.lines[0].rect)
+        # print(self.lines[0].image)
 
-
-    def change_dir(self, direction):
-        self.dir = direction
 
 
 class Line(pygame.sprite.Sprite):
@@ -232,27 +233,23 @@ class Line(pygame.sprite.Sprite):
         y += 1 if not y else 0
         return x, y
 
-    def update(self, **kwargs):
+    def update_args(self, **kwargs):
 
         if 'dir_' in kwargs:
             dir_ = get_kwarg(kwargs, 'dir_')
-            if dir_:
-                self.dir_ == dir_
+            self.dir_ = dir_
 
         if 'square' in kwargs:
             square = get_kwarg(kwargs, 'square')
-            if square:
-                self.square = square
+            self.square = square
 
         if 'line_n' in kwargs:
             line_n = get_kwarg(kwargs, 'line_n')
-            if line_n:
-                self.line_n = line_n
-                if self.line_n >= self.length:
-                    val = self.line_n // self.length
-                    coord_n, factor = get_coords_ns_factors(growth_dir(self.dir_))
-                    self.square = move_coords(self.square, coord_n, factor, val)
-                    self.line_n %= self.length
+            self.line_n = line_n
+            if self.line_n < 0:
+                self.line_n %= self.length
+                coord_n, factor = get_coords_ns_factors(self.dir_)
+                self.square = move_coords(self.square, coord_n, factor, 1)
 
         self.update_rect_image()
 
@@ -263,21 +260,7 @@ class Line(pygame.sprite.Sprite):
 
 
 class Apple(pygame.sprite.Sprite):
-    def __init__(self, square, apples, game):
-        super().__init__(*apples)
-        self.game = game
-        self.color = 'green'
-        self.square = square
-        self.rect = pygame.Rect(self.square[0] * self.game.square_size,
-                                self.square[1] * self.game.square_size,
-                                self.square[0] * self.game.square_size +
-                                self.game.square_size,
-                                self.square[1] * self.game.square_size +
-                                self.game.square_size)
-        self.image = pygame.Surface((self.game.square_size,
-                                     self.game.square_size))
-        self.rect = pygame.Rect(self.x, self.y, self.game.square_size,
-                                self.game.square_size)
+
 
 
 if __name__ == '__main__':
@@ -308,11 +291,17 @@ if __name__ == '__main__':
                 break
 
             if event.type == pygame.KEYDOWN:
-                print(event.key, KEYS_DIRS[event.key])
-                if (event.key in KEYS_DIRS) and (game.snake.dir not in \
-                                                 (KEYS_DIRS[event.key], KEYS_DIRS[OPPO_KEYS
-                                                 [event.key]])):
+                if all(((event.key in KEYS_DIRS),
+                       (set(game.snake.dir_) != set(KEYS_DIRS[event.key])),
+                       not new_snake_dir)):
                     new_snake_dir = KEYS_DIRS[event.key]
+
+        if new_snake_dir and not game.snake.lines[0].line_n:
+            print(game.snake.lines[0].square, game.snake.lines[0].line_n)
+            print(game.snake.lines[-1].square, game.snake.lines[-1].line_n)
+            game.snake.change_head_dir(new_snake_dir)
+            new_snake_dir = False
+
 
         game.snake.move_forward()
 
