@@ -75,11 +75,12 @@ def move_coords(coords, coord_n, factor, val):
 def factors_to_coords(seq, sq_size):
     return tuple(map(lambda p: (factors_to_coords(p, sq_size)
                                 if isinstance(p, (tuple, list))
-                                else p * sq_size), seq))
+                                else p * (sq_size - 1)), seq))
 
 
 def square_to_point_coords(sq_coords, sq_size):
-    return tuple(map(lambda coord: coord * sq_size, sq_coords))
+    coords_points = tuple(map(lambda coord: coord * sq_size, sq_coords))
+    return coords_points
 
 
 # Преобразовать точечные координаты в квадратные с округлением
@@ -134,13 +135,14 @@ class Game:
         # Определить направление и длину Змеи в квадратах
         # snake_dir = random.choice(DIRS_POINTS)  # Случайное направление Змеи
         snake_dir = DIRS_POINTS[1]  # Test - uncomment prev.
-        snake_len_in_sq = 3  # Длина в квадратах
+        snake_len_in_sq = 10  # Длина в квадратах
 
         # Создать и перенести координаты 2-х квадратов - границ игрового поля
         # для выбора головного квадрата
         field_rect = ((0, 0), (self.field_size_sq[0] - 1,
                                self.field_size_sq[1] - 1))
-        field_rect_cut = cut_rect_points(field_rect, snake_dir, 2)
+        field_rect_cut = cut_rect_points(field_rect, snake_dir,
+                                         snake_len_in_sq - 1)
 
         # Выбрать квадрат (координаты) Головн.Яч.
         (x1, y1), (x2, y2) = field_rect_cut
@@ -168,8 +170,8 @@ class Snake(pygame.sprite.Group):
         # Генерация Линий в Кв-тах
         for sq_n in range(snake_len_in_sq):  # Для каждого номера кв-та
             coord_n, factor = get_coords_ns_factors(growth_dir(self.dir_))
-            square = move_coords(head_coords_sq, coord_n, factor, sq_n)
-            for line_n in range(self.game.square_size):  # Для кажд. номера линии (в кв-те) (0,1,...,15)
+            square = move_coords(head_coords_sq, coord_n, factor, sq_n)  # Определить квадрат генерации
+            for line_n in range(self.game.square_size):  # (0-31) Для кажд. номера линии (в кв-те) (0,1,...,15)
                 line = Line(self, self.game.square_size, square, self.dir_, line_n)
                 # Поместить в 'self.cells' в начало (стек) Линию с направлением,
                 # координатами квадрата, номером линии
@@ -191,9 +193,6 @@ class Snake(pygame.sprite.Group):
         self.dir_ = new_dir
         for line in self.lines[:self.game.square_size]:
             line.update_args(dir_=self.dir_)
-        # print(self.lines[0].rect)
-        # print(self.lines[0].image)
-
 
 
 class Line(pygame.sprite.Sprite):
@@ -203,9 +202,6 @@ class Line(pygame.sprite.Sprite):
         self.length = square_size
         self.square = square
         self.dir_ = dir_
-
-        self.length = self.snake.game.square_size
-
         self.line_n = line_n
         self.update_rect_image()
 
@@ -218,20 +214,22 @@ class Line(pygame.sprite.Sprite):
         line_rect_in_sq = tuple(map(lambda p:
                                     move_coords(p, coord_n, factor,
                                                 self.line_n), rect_in_sq))
-
         # Получить координаты точки Квадрата Линии (первой точки Квадрата от начала координат)
-        point_coords_of_square = square_to_point_coords(self.square, self.length)
-
+        point_coords_of_square = square_to_point_coords(self.square,
+                                                        self.length)
         # Получить сумму координат точек
-        return pair_sum(line_rect_in_sq, (point_coords_of_square,
-                                          point_coords_of_square))
+        rect_coords = pair_sum(line_rect_in_sq, (point_coords_of_square,
+                                                 point_coords_of_square))
+        (x1, y1), (x2, y2) = rect_coords
+        width, height = x2 - x1 + 1, y2 - y1 + 1
+        # width += 1 if not width else 0
+        # height += 1 if not height else 0
+        return pygame.Rect(x1, y1, width, height)
 
-    def gen_image(self):
-        x = self.rect[1][0] - self.rect[0][0]
-        y = self.rect[1][1] - self.rect[0][1]
-        x += 1 if not x else 0
-        y += 1 if not y else 0
-        return x, y
+    def update_rect_image(self):
+        self.rect = self.gen_rect()
+        self.image = pygame.Surface(self.rect.size)
+        self.image.fill(self.snake.color)
 
     def update_args(self, **kwargs):
 
@@ -253,14 +251,30 @@ class Line(pygame.sprite.Sprite):
 
         self.update_rect_image()
 
-    def update_rect_image(self):
-        self.rect = self.gen_rect()
-        self.image = pygame.Surface(self.gen_image())
-        self.image.fill(self.snake.color)
-
 
 class Apple(pygame.sprite.Sprite):
+    def __init__(self, apples, square, length):
+        super().__init__(apples)
+        self.square = square
+        self.length = length
+        self.update_rect_image()
 
+    def gen_rect(self):
+        return ((self.square[0] * self.length,
+                 self.square[1] * self.length),
+                ((self.square[0] + 1) * self.length,
+                 (self.square[1] + 1) * self.length))
+
+    def gen_image(self):
+        x = self.rect[1][0] - self.rect[0][0]
+        y = self.rect[1][1] - self.rect[0][1]
+        x += 1 if not x else 0
+        y += 1 if not y else 0
+        return x, y
+
+    def update_rect_image(self):
+        self.rect = self.gen_rect()
+        self.image = self.gen_image()
 
 
 if __name__ == '__main__':
@@ -278,8 +292,6 @@ if __name__ == '__main__':
     screen_grid = pygame.sprite.Group()
     gen_grid(size, game.square_size, screen_grid)
     screen_grid.draw(screen)
-    # for i in range(50):
-    #     game.next_move()
     # test
 
     new_snake_dir = False
@@ -297,8 +309,6 @@ if __name__ == '__main__':
                     new_snake_dir = KEYS_DIRS[event.key]
 
         if new_snake_dir and not game.snake.lines[0].line_n:
-            print(game.snake.lines[0].square, game.snake.lines[0].line_n)
-            print(game.snake.lines[-1].square, game.snake.lines[-1].line_n)
             game.snake.change_head_dir(new_snake_dir)
             new_snake_dir = False
 
